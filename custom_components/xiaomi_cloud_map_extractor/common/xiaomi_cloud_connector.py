@@ -6,7 +6,7 @@ import logging
 import os
 import random
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, NamedTuple, Optional, Tuple
 from Crypto.Cipher import ARC4
 
 import requests
@@ -14,6 +14,20 @@ import requests
 from custom_components.xiaomi_cloud_map_extractor.const import *
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class XiaomiHome(NamedTuple):
+    homeid: str
+    owner: str
+
+
+class XiaomiDeviceInfo(NamedTuple):
+    device_id: str
+    name: str
+    model: str
+    token: str
+    country: str
+    user_id: str
 
 
 # noinspection PyBroadException
@@ -131,30 +145,81 @@ class XiaomiCloudConnector:
                 return response.content
         return None
 
-    def get_device_details(self, token: str,
-                           country: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        countries_to_check = CONF_AVAILABLE_COUNTRIES
-        if country is not None:
-            countries_to_check = [country]
-        for country in countries_to_check:
-            devices = self.get_devices(country)
-            if devices is None:
-                continue
-            found = list(filter(lambda d: str(d["token"]).casefold() == str(token).casefold(),
-                                devices["result"]["list"]))
-            if len(found) > 0:
-                user_id = found[0]["uid"]
-                device_id = found[0]["did"]
-                model = found[0]["model"]
-                return country, user_id, device_id, model
+    def get_own_homes(self, country: str):
+        url = self.get_api_url(country) + "/v2/homeroom/gethome"
+        params = {
+            "data": '{"fg": true, "fetch_share": true, "fetch_share_dev": true, "limit": 300, "app_ver": 7}'}
+
+        if (response := self.execute_api_call_encrypted(url, params)) is None:
+            return None
+
+        homes = [
+            XiaomiHome(str(home['id']), str(self._userId))
+            for home in response['result']['homelist']
+        ]
+
+        return homes
+
+    def get_shared_homes(self, country: str):
+        url = self.get_api_url(country) + "/v2/user/get_device_cnt"
+        params = {
+            "data": '{ "fetch_own": true, "fetch_share": true}'
+        }
+
+        if (response := self.execute_api_call_encrypted(url, params)) is None:
+            return None
+
+        homes = [
+            XiaomiHome(str(home['home_id']), str(home['home_owner']))
+            for home in response["result"]["share"]["share_family"]
+        ]
+
+        return homes
+
+    def get_devices_iter_v2(self, country: Optional[str] = None):
+        countries_to_check = CONF_AVAILABLE_COUNTRIES if country is None else [country]
+        for _country in countries_to_check:
+            owned_homes = self.get_own_homes(_country) or []
+            shared_homes = self.get_shared_homes(_country) or []
+            homes = owned_homes + shared_homes
+
+            for home in homes:
+                if devices := self.get_devices_from_home(_country, home.homeid, home.owner):
+                    yield from devices
+
+    def get_device_details(self, token: str, country: Optional[str] = None):
+        devices = self.get_devices_iter_v2(country)
+        matching_token = filter(lambda device: device.token == token, devices)
+        if match := next(matching_token, None):
+            return match.country, match.user_id, match.device_id, match.model
+
         return None, None, None, None
 
-    def get_devices(self, country: str) -> Any:
-        url = self.get_api_url(country) + "/home/device_list"
-        params = {
-            "data": '{"getVirtualModel":false,"getHuamiDevices":0}'
-        }
-        return self.execute_api_call_encrypted(url, params)
+    def get_devices_from_home(self, country: str, home_id: str, owner_id: str):
+        url = self.get_api_url(country) + "/v2/home/home_device_list"
+        params = {"data": json.dumps({
+            "home_id": home_id,
+            "home_owner": owner_id,
+            "limit": 200,
+            "get_split_device": True,
+            "support_smart_home": True
+        })}
+        if (response := self.execute_api_call_encrypted(url, params)) is None:
+            return None
+
+        devices = [
+            XiaomiDeviceInfo(
+                device_id=device["did"],
+                name=device["name"],
+                model=device["model"],
+                token=device["token"],
+                country=country,
+                user_id=device["uid"]
+            )
+            for device in response["result"]["device_info"]
+        ]
+
+        return devices
 
     def execute_api_call_encrypted(self, url: str, params: Dict[str, str]) -> Any:
         headers = {

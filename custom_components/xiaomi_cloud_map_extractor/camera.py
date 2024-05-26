@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from vacuum_map_parser_base.config.color import ColorsPalette
 from vacuum_map_parser_base.config.drawable import Drawable
-from vacuum_map_parser_base.config.image_config import ImageConfig
+from vacuum_map_parser_base.config.image_config import ImageConfig, TrimConfig
 from vacuum_map_parser_base.config.size import Sizes
 from vacuum_map_parser_base.config.text import Text
 
@@ -120,6 +120,13 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     })
 
 
+def dict_to_image_config(raw: dict):
+    return ImageConfig(
+        scale=raw.get("scale", 1.0),
+        rotate=raw.get("rotate", 0.0),
+        trim=TrimConfig(**raw.get("trim", {}))
+    )
+
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     await async_setup_reload_service(hass, DOMAIN, PLATFORMS)
 
@@ -130,7 +137,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     country = config[CONF_COUNTRY]
     name = config[CONF_NAME]
     should_poll = config[CONF_AUTO_UPDATE]
-    image_config = config[CONF_MAP_TRANSFORM]
+    image_config = dict_to_image_config(config[CONF_MAP_TRANSFORM])
     colors = config[CONF_COLORS]
     room_colors = config[CONF_ROOM_COLORS]
     for room, color in room_colors.items():

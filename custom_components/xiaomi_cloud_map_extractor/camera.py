@@ -6,7 +6,7 @@ from enum import StrEnum
 from vacuum_map_parser_base.config.color import ColorsPalette
 from vacuum_map_parser_base.config.drawable import Drawable
 from vacuum_map_parser_base.config.image_config import ImageConfig, TrimConfig
-from vacuum_map_parser_base.config.size import Sizes
+from vacuum_map_parser_base.config.size import Size, Sizes
 from vacuum_map_parser_base.config.text import Text
 
 import PIL.Image as Image
@@ -127,6 +127,33 @@ def dict_to_image_config(raw: dict):
         trim=TrimConfig(**raw.get("trim", {}))
     )
 
+def dict_to_colors_palette(raw: dict):
+    colors_dict = {}
+    if colors := raw.get(CONF_COLORS, {}):
+        colors_dict = {c: tuple(v) for c, v in colors.items()}
+
+    room_colors_dict = {}
+    if room_colors := raw.get(CONF_ROOM_COLORS, {}):
+        room_colors_dict = {c: tuple(v) for c, v in room_colors.items()}
+
+    return ColorsPalette(colors_dict=colors_dict, room_colors=room_colors_dict)
+
+def dict_to_drawables(raw: dict):
+    drawables = raw.get(CONF_DRAW, [])
+    if DRAWABLE_ALL in drawables:
+        drawables = CONF_AVAILABLE_DRAWABLES[1:]
+    return [Drawable(d) for d in drawables]
+
+def dict_to_sizes(raw: dict):
+    sizes = raw[CONF_SIZES]
+    return Sizes({
+        Size(k): v for k, v in sizes.items()
+    })
+
+def dict_to_texts(raw: dict):
+    raw_texts = raw.get[CONF_TEXTS]
+    return [Text(**t) for t in raw_texts]
+
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     await async_setup_reload_service(hass, DOMAIN, PLATFORMS)
 
@@ -138,15 +165,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     name = config[CONF_NAME]
     should_poll = config[CONF_AUTO_UPDATE]
     image_config = dict_to_image_config(config[CONF_MAP_TRANSFORM])
-    colors = config[CONF_COLORS]
-    room_colors = config[CONF_ROOM_COLORS]
-    for room, color in room_colors.items():
-        colors[f"{COLOR_ROOM_PREFIX}{room}"] = color
-    drawables = config[CONF_DRAW]
-    sizes = config[CONF_SIZES]
-    texts = config[CONF_TEXTS]
-    if DRAWABLE_ALL in drawables:
-        drawables = CONF_AVAILABLE_DRAWABLES[1:]
+    colors = dict_to_colors_palette(config)
+    drawables = dict_to_drawables(config)
+    sizes = dict_to_sizes(config)
+    texts = dict_to_texts(config)
+
     attributes = config[CONF_ATTRIBUTES]
     store_map_raw = config[CONF_STORE_MAP_RAW]
     store_map_image = config[CONF_STORE_MAP_IMAGE]

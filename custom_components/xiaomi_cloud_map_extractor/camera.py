@@ -151,7 +151,7 @@ def dict_to_sizes(raw: dict):
     })
 
 def dict_to_texts(raw: dict):
-    raw_texts = raw.get[CONF_TEXTS]
+    raw_texts = raw[CONF_TEXTS]
     return [Text(**t) for t in raw_texts]
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
